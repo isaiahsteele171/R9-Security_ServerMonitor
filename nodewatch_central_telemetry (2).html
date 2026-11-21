@@ -1,0 +1,1839 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>R9-SECURITY SERVER MONITOR</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter & JetBrains Mono -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        obsidian: '#09090B',
+                        charcoal: '#111114',
+                        slatepanel: '#18181C',
+                        borderline: '#242429',
+                        crimson: {
+                            DEFAULT: '#DC2626',
+                            glow: 'rgba(220, 38, 38, 0.25)',
+                            dark: '#991B1B'
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <style>
+        /* Custom Scrollbar for dense telemetry tables */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #09090b;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #27272a;
+            border-radius: 3px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #DC2626;
+        }
+
+        /* Subtle grid background texture */
+        .bg-telemetry-grid {
+            background-color: #09090b;
+            background-image: 
+                linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
+            background-size: 32px 32px;
+        }
+
+        /* Tabular numbers for jitter-free live updates */
+        .tabular-nums {
+            font-variant-numeric: tabular-nums;
+        }
+
+        /* Pulsing status indicator */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 0.8; }
+            100% { transform: scale(2.2); opacity: 0; }
+        }
+        .pulse-dot::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 9999px;
+            background-color: inherit;
+            animation: pulse-ring 1.8s cubic-bezier(0.215, 0.61, 0.355, 1) infinite;
+        }
+    </style>
+</head>
+<body class="bg-telemetry-grid text-zinc-200 font-sans antialiased min-h-screen flex flex-col selection:bg-crimson selection:text-white">
+
+    <!-- =====================================================================
+         TOP HEADER / COMMAND BAR
+         ===================================================================== -->
+    <header class="sticky top-0 z-30 bg-charcoal/95 backdrop-blur-md border-b border-borderline px-4 lg:px-6 py-3">
+        <div class="max-w-[1600px] mx-auto flex flex-wrap items-center justify-between gap-4">
+            
+            <!-- Left: Branding & Ingest Listener Badge -->
+            <div class="flex items-center gap-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-lg bg-crimson/15 border border-crimson/40 flex items-center justify-center shadow-[0_0_15px_rgba(225,29,72,0.2)]">
+                        <i data-lucide="activity" class="w-5 h-5 text-crimson"></i>
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-2">
+                            <h1 class="text-sm sm:text-base font-bold tracking-wider text-white">R9-SECURITY <span class="text-crimson font-mono">//</span> SERVER MONITOR</h1>
+                            <span class="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-semibold bg-zinc-800 text-zinc-400 border border-zinc-700">v2.4.0</span>
+                        </div>
+                        <p class="text-[11px] text-zinc-500 font-mono">DISTRIBUTED TELEMETRY AGGREGATOR</p>
+                    </div>
+                </div>
+
+                <!-- Port Listener Pill -->
+                <div class="hidden xl:flex items-center gap-2 px-3 py-1.5 rounded-lg bg-obsidian border border-borderline text-xs font-mono">
+                    <span id="ingest-dot-wrapper" class="relative flex h-2 w-2">
+                        <span id="ingest-pulse" class="hidden pulse-dot absolute inline-flex h-full w-full rounded-full bg-emerald-500"></span>
+                        <span id="ingest-dot" class="relative inline-flex rounded-full h-2 w-2 bg-zinc-500"></span>
+                    </span>
+                    <span class="text-zinc-400">INGEST:</span>
+                    <span id="header-endpoint-display" class="text-zinc-300 font-semibold">:8443 (IDLE)</span>
+                </div>
+            </div>
+
+            <!-- Center: Node Switcher Pills -->
+            <div class="flex items-center gap-1.5 bg-obsidian px-2 py-1 rounded-lg border border-borderline overflow-x-auto max-w-full" id="node-switcher">
+                <span class="text-[11px] font-mono text-zinc-500 px-2 py-0.5">No active nodes reporting</span>
+            </div>
+
+            <!-- Right: Connection Status & Settings -->
+            <div class="flex items-center gap-2.5 ml-auto sm:ml-0">
+                <div id="connection-status-badge" class="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-zinc-900 border border-borderline text-zinc-400 text-xs font-mono font-semibold">
+                    <span id="stream-indicator" class="w-2 h-2 rounded-full bg-zinc-500"></span>
+                    <span id="stream-label">AWAITING NODES</span>
+                </div>
+
+                <button onclick="clearActiveOrAll()" title="Clear Telemetry State" class="p-2 rounded-lg bg-slatepanel hover:bg-zinc-800 border border-borderline text-zinc-400 hover:text-white transition cursor-pointer">
+                    <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+                </button>
+
+                <button onclick="openAgentSetupModal()" title="Generate Linux Monitoring Agent Script" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slatepanel hover:bg-zinc-800 border border-borderline text-zinc-200 hover:text-white text-xs font-mono font-semibold transition cursor-pointer">
+                    <i data-lucide="terminal" class="w-3.5 h-3.5 text-crimson"></i>
+                    <span class="hidden md:inline">AGENT SETUP SCRIPT</span>
+                </button>
+
+                <button onclick="openConfigModal()" title="Ingest Connection & Schema" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-crimson/15 hover:bg-crimson/25 border border-crimson/40 text-crimson text-xs font-mono font-semibold transition cursor-pointer">
+                    <i data-lucide="plug" class="w-3.5 h-3.5"></i>
+                    <span class="hidden sm:inline">INGEST CONFIG</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- =====================================================================
+         MAIN DASHBOARD CONTAINER
+         ===================================================================== -->
+    <main class="flex-1 max-w-[1600px] w-full mx-auto px-4 lg:px-6 py-5 space-y-5">
+
+        <!-- Active Node Context Banner -->
+        <div class="flex flex-wrap items-center justify-between gap-3 bg-charcoal border border-borderline rounded-xl px-4 py-3">
+            <div class="flex flex-wrap items-center gap-3 sm:gap-5">
+                <div class="flex items-center gap-2.5">
+                    <span id="banner-status-dot" class="w-2.5 h-2.5 rounded-full bg-zinc-600"></span>
+                    <span id="banner-hostname" class="font-mono font-bold text-base text-zinc-400">NO NODE SELECTED</span>
+                    <span id="banner-role" class="px-2 py-0.5 text-[11px] font-mono rounded bg-zinc-900 text-zinc-500 border border-borderline">IDLE</span>
+                </div>
+                <div class="hidden md:flex items-center gap-4 text-xs font-mono text-zinc-500 border-l border-borderline pl-4">
+                    <span>IPv4: <strong id="banner-ip" class="text-zinc-300">--</strong></span>
+                    <span>PRIVATE: <strong id="banner-private-ip" class="text-zinc-300">--</strong></span>
+                    <span>REGION: <strong id="banner-region" class="text-zinc-300">--</strong></span>
+                </div>
+            </div>
+            <div class="flex items-center gap-3 text-xs font-mono text-zinc-500">
+                <span>LAST PACKET: <span id="last-updated-time" class="text-zinc-300">--</span></span>
+            </div>
+        </div>
+
+        <!-- =================================================================
+             1. PRIMARY SYSTEM TELEMETRY CARDS (4-COLUMN GRID)
+             ================================================================= -->
+        <section class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+            
+            <!-- CARD 1: CPU USAGE -->
+            <div class="bg-charcoal border border-borderline rounded-xl p-4 flex flex-col justify-between relative overflow-hidden">
+                <div class="flex items-start justify-between mb-3">
+                    <div>
+                        <span class="text-xs font-mono uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                            <i data-lucide="cpu" class="w-3.5 h-3.5 text-crimson"></i> CPU Utilization
+                        </span>
+                        <div class="mt-1 flex items-baseline gap-2">
+                            <span id="cpu-percent" class="text-3xl font-mono font-bold text-white tabular-nums">0.0%</span>
+                            <span id="cpu-cores" class="text-xs font-mono text-zinc-500">-- vCPU</span>
+                        </div>
+                    </div>
+                    <!-- Radial Progress Gauge -->
+                    <div class="relative w-12 h-12 flex items-center justify-center">
+                        <svg class="w-12 h-12 -rotate-90" viewBox="0 0 36 36">
+                            <path class="text-zinc-800" stroke-width="3.5" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                            <path id="cpu-ring" class="text-crimson transition-all duration-300" stroke-dasharray="0, 100" stroke-width="3.5" stroke-linecap="round" stroke="currentColor" fill="none" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" />
+                        </svg>
+                    </div>
+                </div>
+
+                <!-- Mini Sparkline Canvas -->
+                <div class="h-10 w-full my-1">
+                    <canvas id="cpu-sparkline" class="w-full h-full"></canvas>
+                </div>
+
+                <div class="pt-2.5 mt-1 border-t border-borderline/70 flex items-center justify-between text-[11px] font-mono text-zinc-400">
+                    <span>LOAD AVG:</span>
+                    <span id="cpu-load" class="text-zinc-400 tabular-nums">--</span>
+                </div>
+            </div>
+
+            <!-- CARD 2: RAM USAGE -->
+            <div class="bg-charcoal border border-borderline rounded-xl p-4 flex flex-col justify-between">
+                <div class="flex items-start justify-between mb-3">
+                    <div>
+                        <span class="text-xs font-mono uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                            <i data-lucide="memory-stick" class="w-3.5 h-3.5 text-crimson"></i> Memory (RAM)
+                        </span>
+                        <div class="mt-1 flex items-baseline gap-2">
+                            <span id="ram-percent" class="text-3xl font-mono font-bold text-white tabular-nums">0%</span>
+                            <span id="ram-fraction" class="text-xs font-mono text-zinc-400 tabular-nums">0.00 / 0.00 GB</span>
+                        </div>
+                    </div>
+                    <span id="ram-badge" class="px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-zinc-900 text-zinc-500 border border-borderline">IDLE</span>
+                </div>
+
+                <!-- Segmented Memory Bar -->
+                <div class="my-2 space-y-1.5">
+                    <div class="w-full h-2.5 bg-zinc-900 rounded-full overflow-hidden flex border border-zinc-800">
+                        <div id="ram-bar-used" class="bg-crimson h-full transition-all duration-300" style="width: 0%"></div>
+                        <div id="ram-bar-cached" class="bg-amber-500/70 h-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                    <div class="flex justify-between text-[10px] font-mono text-zinc-500">
+                        <span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-crimson"></span>Active: <strong id="ram-active" class="text-zinc-400">--</strong></span>
+                        <span class="flex items-center gap-1"><span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>Cached: <strong id="ram-cached" class="text-zinc-400">--</strong></span>
+                    </div>
+                </div>
+
+                <div class="pt-2.5 mt-1 border-t border-borderline/70 flex items-center justify-between text-[11px] font-mono text-zinc-400">
+                    <span>SWAP ALLOCATION:</span>
+                    <span id="ram-swap" class="text-zinc-400 tabular-nums">--</span>
+                </div>
+            </div>
+
+            <!-- CARD 3: DISK USAGE -->
+            <div class="bg-charcoal border border-borderline rounded-xl p-4 flex flex-col justify-between">
+                <div class="flex items-start justify-between mb-3">
+                    <div>
+                        <span class="text-xs font-mono uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                            <i data-lucide="hard-drive" class="w-3.5 h-3.5 text-crimson"></i> Storage Volume
+                        </span>
+                        <div class="mt-1 flex items-baseline gap-2">
+                            <span id="disk-percent" class="text-3xl font-mono font-bold text-white tabular-nums">0%</span>
+                            <span id="disk-fraction" class="text-xs font-mono text-zinc-400 tabular-nums">0.0 / 0.0 GB</span>
+                        </div>
+                    </div>
+                    <span id="disk-mount" class="px-2 py-0.5 rounded text-[10px] font-mono bg-zinc-900 text-zinc-500 border border-borderline">--</span>
+                </div>
+
+                <div class="my-2 space-y-1.5">
+                    <div class="w-full h-2.5 bg-zinc-900 rounded-full overflow-hidden border border-zinc-800">
+                        <div id="disk-bar" class="bg-gradient-to-r from-crimson-dark to-crimson h-full rounded-full transition-all duration-300" style="width: 0%"></div>
+                    </div>
+                    <div class="flex justify-between text-[10px] font-mono text-zinc-500">
+                        <span>FS: <strong id="disk-fs" class="text-zinc-400">--</strong></span>
+                        <span>FREE: <strong id="disk-free" class="text-zinc-400">--</strong></span>
+                    </div>
+                </div>
+
+                <div class="pt-2.5 mt-1 border-t border-borderline/70 flex items-center justify-between text-[11px] font-mono text-zinc-400">
+                    <span>DISK I/O (R/W):</span>
+                    <span id="disk-iops" class="text-zinc-400 tabular-nums">--</span>
+                </div>
+            </div>
+
+            <!-- CARD 4: SYSTEM UPTIME -->
+            <div class="bg-charcoal border border-borderline rounded-xl p-4 flex flex-col justify-between">
+                <div class="flex items-start justify-between mb-2">
+                    <div>
+                        <span class="text-xs font-mono uppercase tracking-wider text-zinc-400 flex items-center gap-1.5">
+                            <i data-lucide="clock" class="w-3.5 h-3.5 text-crimson"></i> System Uptime
+                        </span>
+                        <div id="uptime-clock" class="mt-1.5 text-2xl xl:text-[26px] font-mono font-bold text-white tracking-tight tabular-nums">
+                            00d 00h 00m 00s
+                        </div>
+                    </div>
+                </div>
+
+                <div class="my-1.5 bg-obsidian/80 border border-borderline/80 rounded-lg px-2.5 py-2 space-y-1 text-[11px] font-mono">
+                    <div class="flex justify-between">
+                        <span class="text-zinc-500">OS / DISTRO:</span>
+                        <span id="sys-os" class="text-zinc-400">--</span>
+                    </div>
+                    <div class="flex justify-between">
+                        <span class="text-zinc-500">KERNEL:</span>
+                        <span id="sys-kernel" class="text-zinc-400">--</span>
+                    </div>
+                </div>
+
+                <div class="pt-2.5 mt-1 border-t border-borderline/70 flex items-center justify-between text-[11px] font-mono text-zinc-400">
+                    <span>ACTIVE TASKS:</span>
+                    <span id="sys-tasks" class="text-zinc-400 tabular-nums">--</span>
+                </div>
+            </div>
+
+        </section>
+
+        <!-- =================================================================
+             2. NETWORK THROUGHPUT & TRAFFIC MONITOR
+             ================================================================= -->
+        <section class="bg-charcoal border border-borderline rounded-xl p-4 lg:p-5">
+            <div class="flex flex-wrap items-center justify-between gap-4 mb-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-lg bg-zinc-900 border border-borderline flex items-center justify-center">
+                        <i data-lucide="arrow-up-down" class="w-4 h-4 text-crimson"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-sm font-semibold text-white tracking-wide">NETWORK THROUGHPUT & INTERFACE TELEMETRY</h2>
+                        <p class="text-xs font-mono text-zinc-400">INTERFACE: <span id="net-iface" class="text-zinc-300">--</span></p>
+                    </div>
+                </div>
+
+                <!-- Live Upload / Download Badges -->
+                <div class="flex flex-wrap items-center gap-3 sm:gap-6">
+                    <!-- Download Metric -->
+                    <div class="flex items-center gap-3 bg-obsidian border border-borderline rounded-lg px-3.5 py-2">
+                        <div class="w-2.5 h-2.5 rounded-full bg-cyan-400/50"></div>
+                        <div>
+                            <div class="text-[10px] font-mono text-zinc-400 uppercase">Inbound (RX / DL)</div>
+                            <div class="flex items-baseline gap-2">
+                                <span id="net-rx-speed" class="text-lg font-mono font-bold text-cyan-400 tabular-nums">0.0 Mbps</span>
+                                <span id="net-rx-total" class="text-[11px] font-mono text-zinc-500">Σ --</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Upload Metric -->
+                    <div class="flex items-center gap-3 bg-obsidian border border-borderline rounded-lg px-3.5 py-2">
+                        <div class="w-2.5 h-2.5 rounded-full bg-crimson/60"></div>
+                        <div>
+                            <div class="text-[10px] font-mono text-zinc-400 uppercase">Outbound (TX / UL)</div>
+                            <div class="flex items-baseline gap-2">
+                                <span id="net-tx-speed" class="text-lg font-mono font-bold text-crimson tabular-nums">0.0 Mbps</span>
+                                <span id="net-tx-total" class="text-[11px] font-mono text-zinc-500">Σ --</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Real-time Dual-Line Throughput Canvas -->
+            <div class="relative w-full h-48 sm:h-56 bg-obsidian/90 border border-borderline rounded-lg p-2">
+                <canvas id="network-chart" class="w-full h-full block"></canvas>
+                <div id="network-empty-overlay" class="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <span class="text-xs font-mono text-zinc-600 bg-obsidian/80 px-3 py-1 rounded border border-borderline/60">Awaiting network time-series packets...</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- =================================================================
+             3. SPLIT-PANE LOWER SECTION (NETSTAT REPORTS & ACTIVE SERVICES)
+             ================================================================= -->
+        <section class="grid grid-cols-1 lg:grid-cols-12 gap-5">
+            
+            <!-- LEFT / MAIN PANEL (7 cols): NETSTAT REPORTS -->
+            <div class="lg:col-span-7 xl:col-span-8 bg-charcoal border border-borderline rounded-xl flex flex-col overflow-hidden">
+                <!-- Panel Header & Controls -->
+                <div class="p-4 border-b border-borderline flex flex-wrap items-center justify-between gap-3">
+                    <div class="flex items-center gap-2.5">
+                        <i data-lucide="network" class="w-4 h-4 text-crimson"></i>
+                        <h2 class="text-sm font-semibold text-white tracking-wide">NETSTAT SOCKET & PORT MATRIX</h2>
+                        <span id="netstat-count" class="px-2 py-0.5 text-[11px] font-mono rounded-full bg-zinc-900 text-zinc-400 border border-borderline">0</span>
+                    </div>
+
+                    <div class="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+                        <!-- Protocol / State Filter Pills -->
+                        <div class="flex items-center bg-obsidian p-1 rounded-lg border border-borderline text-[11px] font-mono" id="netstat-filters">
+                            <button onclick="setNetstatFilter('ALL')" data-filter="ALL" class="filter-tab px-2.5 py-1 rounded bg-crimson text-white font-semibold cursor-pointer">ALL</button>
+                            <button onclick="setNetstatFilter('LISTEN')" data-filter="LISTEN" class="filter-tab px-2.5 py-1 rounded text-zinc-400 hover:text-white cursor-pointer">LISTEN</button>
+                            <button onclick="setNetstatFilter('ESTABLISHED')" data-filter="ESTABLISHED" class="filter-tab px-2.5 py-1 rounded text-zinc-400 hover:text-white cursor-pointer">ESTAB</button>
+                            <button onclick="setNetstatFilter('TCP')" data-filter="TCP" class="filter-tab px-2.5 py-1 rounded text-zinc-400 hover:text-white cursor-pointer">TCP</button>
+                            <button onclick="setNetstatFilter('UDP')" data-filter="UDP" class="filter-tab px-2.5 py-1 rounded text-zinc-400 hover:text-white cursor-pointer">UDP</button>
+                        </div>
+
+                        <!-- Search Input -->
+                        <div class="relative flex-1 sm:w-48">
+                            <i data-lucide="search" class="w-3.5 h-3.5 text-zinc-500 absolute left-2.5 top-1/2 -translate-y-1/2"></i>
+                            <input type="text" id="netstat-search" oninput="renderNetstatTable()" placeholder="Port, IP, PID, process..." class="w-full bg-obsidian border border-borderline focus:border-crimson rounded-lg pl-8 pr-3 py-1.5 text-xs font-mono text-zinc-200 placeholder-zinc-600 focus:outline-none">
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Dense Telemetry Table -->
+                <div class="overflow-x-auto max-h-[420px] overflow-y-auto">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="bg-obsidian/90 sticky top-0 z-10 border-b border-borderline text-[11px] font-mono uppercase text-zinc-400">
+                            <tr>
+                                <th class="py-2.5 px-4">Proto</th>
+                                <th class="py-2.5 px-4">Local Address : Port</th>
+                                <th class="py-2.5 px-4">Foreign Address</th>
+                                <th class="py-2.5 px-4">State</th>
+                                <th class="py-2.5 px-4 text-right">PID / Process</th>
+                            </tr>
+                        </thead>
+                        <tbody id="netstat-tbody" class="divide-y divide-borderline/60 text-xs font-mono">
+                            <tr>
+                                <td colspan="5" class="py-12 text-center text-zinc-500">
+                                    <div class="flex flex-col items-center gap-2">
+                                        <i data-lucide="radio" class="w-5 h-5 text-zinc-600"></i>
+                                        <span>No active socket data received</span>
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- RIGHT PANEL (5 cols): ACTIVE SYSTEMD SERVICES -->
+            <div class="lg:col-span-5 xl:col-span-4 bg-charcoal border border-borderline rounded-xl flex flex-col overflow-hidden">
+                <div class="p-4 border-b border-borderline flex items-center justify-between">
+                    <div class="flex items-center gap-2.5">
+                        <i data-lucide="server-cog" class="w-4 h-4 text-crimson"></i>
+                        <h2 class="text-sm font-semibold text-white tracking-wide">ACTIVE DAEMONS & SERVICES</h2>
+                    </div>
+                    <span id="services-summary" class="text-[11px] font-mono text-zinc-500">0/0 RUNNING</span>
+                </div>
+
+                <div id="services-list" class="p-3 space-y-2.5 max-h-[420px] overflow-y-auto">
+                    <div class="py-12 text-center text-xs font-mono text-zinc-500 flex flex-col items-center gap-2">
+                        <i data-lucide="layers" class="w-5 h-5 text-zinc-600"></i>
+                        <span>No service telemetry reported</span>
+                    </div>
+                </div>
+            </div>
+
+        </section>
+    </main>
+
+    <!-- =====================================================================
+         INGEST SETTINGS & SCHEMA MODAL
+         ===================================================================== -->
+    <div id="ingest-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div class="bg-charcoal border border-borderline rounded-xl max-w-2xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="px-4 py-3 bg-obsidian border-b border-borderline flex items-center justify-between">
+                <div class="flex items-center gap-2 font-mono text-xs">
+                    <i data-lucide="plug" class="w-4 h-4 text-crimson"></i>
+                    <span class="text-white font-semibold">CENTRAL TELEMETRY INGEST & PAYLOAD SCHEMA</span>
+                </div>
+                <button onclick="closeConfigModal()" class="text-zinc-400 hover:text-white p-1 cursor-pointer">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+
+            <div class="p-4 space-y-4 overflow-y-auto text-xs font-mono">
+                <!-- Connector Controls -->
+                <div class="bg-obsidian border border-borderline rounded-lg p-3.5 space-y-3">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <span class="text-zinc-300 font-semibold uppercase tracking-wider">Backend Collector Stream</span>
+                        <span id="modal-conn-status" class="px-2 py-0.5 rounded bg-zinc-900 text-zinc-400 border border-borderline">DISCONNECTED</span>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                        <div>
+                            <label class="block text-[10px] text-zinc-500 mb-1">TRANSPORT MODE</label>
+                            <select id="cfg-mode" onchange="updateEndpointPlaceholder()" class="w-full bg-charcoal border border-borderline rounded-lg px-2.5 py-2 text-zinc-200 focus:border-crimson focus:outline-none">
+                                <option value="websocket">WebSocket (Push)</option>
+                                <option value="http">HTTP REST (Poll)</option>
+                            </select>
+                        </div>
+                        <div class="sm:col-span-2">
+                            <label class="block text-[10px] text-zinc-500 mb-1">COLLECTOR ENDPOINT URL / PORT</label>
+                            <input type="text" id="cfg-url" value="ws://0.0.0.0:8443/ws" class="w-full bg-charcoal border border-borderline rounded-lg px-3 py-2 text-zinc-200 focus:border-crimson focus:outline-none">
+                        </div>
+                    </div>
+
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 items-end">
+                        <div class="sm:col-span-2">
+                            <label class="block text-[10px] text-zinc-500 mb-1">BEARER TOKEN / API KEY (OPTIONAL)</label>
+                            <input type="password" id="cfg-token" placeholder="sk-nodewatch-..." class="w-full bg-charcoal border border-borderline rounded-lg px-3 py-2 text-zinc-200 placeholder-zinc-600 focus:border-crimson focus:outline-none">
+                        </div>
+                        <div class="flex gap-2">
+                            <button id="btn-connect" onclick="handleConnectToggle()" class="w-full py-2 px-3 rounded-lg bg-crimson hover:bg-crimson-dark text-white font-semibold transition cursor-pointer">
+                                CONNECT
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Expected JSON Schema -->
+                <div class="space-y-2">
+                    <div class="flex items-center justify-between">
+                        <span class="text-zinc-300 font-semibold uppercase tracking-wider">Expected Node Payload Schema</span>
+                        <div class="flex items-center gap-2">
+                            <button onclick="copySchemaToClipboard()" class="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-borderline transition cursor-pointer">
+                                COPY SCHEMA
+                            </button>
+                            <button onclick="injectVerificationPayload()" class="px-2.5 py-1 rounded bg-crimson/15 hover:bg-crimson/25 text-crimson border border-crimson/40 transition cursor-pointer">
+                                SEND SAMPLE PAYLOAD
+                            </button>
+                        </div>
+                    </div>
+                    <pre id="schema-code" class="p-3 bg-obsidian border border-borderline rounded-lg text-zinc-300 overflow-x-auto max-h-56 leading-relaxed">{
+  "node_id": "prod-node-01",
+  "hostname": "prod-node-01.internal",
+  "role": "WORKER NODE",
+  "ip": "198.51.100.10",
+  "private_ip": "10.240.0.10",
+  "region": "us-east-1",
+  "os": "Ubuntu 24.04.1 LTS",
+  "kernel": "6.8.0-45-generic",
+  "uptime_seconds": 86400,
+  "tasks": { "total": 142, "running": 2 },
+  "cpu": { "usage": 24.5, "cores": 8, "load_avg": [0.85, 0.72, 0.64] },
+  "ram": { "used_gb": 6.40, "active_gb": 4.80, "cached_gb": 1.60, "total_gb": 16.00, "swap_used_gb": 0.0, "swap_total_gb": 2.0 },
+  "disk": { "used_gb": 42.5, "total_gb": 200.0, "mount": "/dev/nvme0n1p1", "fs": "ext4", "read_mbps": 12.4, "write_mbps": 4.1 },
+  "network": { "iface": "eth0", "rx_mbps": 125.4, "tx_mbps": 48.2, "rx_total": "410 GB", "tx_total": "192 GB" },
+  "netstat": [
+    { "proto": "TCP", "local": "0.0.0.0:8443", "foreign": "0.0.0.0:*", "state": "LISTEN", "pid": "1024/python3" }
+  ],
+  "services": [
+    { "name": "nodewatch-agent.service", "desc": "Telemetry Agent", "status": "active", "pid": 1024, "mem": "38 MB" }
+  ]
+}</pre>
+                </div>
+            </div>
+
+            <div class="px-4 py-2.5 bg-obsidian border-t border-borderline flex justify-between items-center text-[11px] font-mono text-zinc-500">
+                <span>API: window.ServerMonitor.ingestPayload(nodeId, payload)</span>
+                <button onclick="closeConfigModal()" class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white cursor-pointer">CLOSE</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- =====================================================================
+         LINUX AGENT SETUP SCRIPT GENERATOR MODAL
+         ===================================================================== -->
+    <div id="agent-setup-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+        <div class="bg-charcoal border border-borderline rounded-xl max-w-3xl w-full shadow-2xl overflow-hidden flex flex-col max-h-[92vh]">
+            <div class="px-4 py-3 bg-obsidian border-b border-borderline flex items-center justify-between">
+                <div class="flex items-center gap-2 font-mono text-xs">
+                    <i data-lucide="terminal" class="w-4 h-4 text-crimson"></i>
+                    <span class="text-white font-semibold">GENERATE LINUX TELEMETRY AGENT SCRIPT (agent-setup.sh)</span>
+                </div>
+                <button onclick="closeAgentSetupModal()" class="text-zinc-400 hover:text-white p-1 cursor-pointer">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                </button>
+            </div>
+
+            <form id="agent-setup-form" onsubmit="handleGenerateAgentScript(event)" class="p-4 space-y-4 overflow-y-auto text-xs font-mono">
+                <p class="text-[11px] font-sans text-zinc-400">
+                    Configure your local or central collector target below to generate a readable, read-only shell script that installs standard system utilities (<code class="text-zinc-200">jq</code>, <code class="text-zinc-200">curl</code>, <code class="text-zinc-200">procps</code>, <code class="text-zinc-200">iproute2</code>) if missing and reports system telemetry on a regular interval.
+                </p>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 bg-obsidian border border-borderline rounded-lg p-3.5">
+                    <div class="sm:col-span-2">
+                        <label for="agent-target-host" class="block text-[10px] text-zinc-400 mb-1">COLLECTOR IP OR HOSTNAME *</label>
+                        <input type="text" id="agent-target-host" required value="192.168.1.50" placeholder="192.168.1.50 or monitor.local" class="w-full bg-charcoal border border-borderline focus:border-crimson rounded-lg px-3 py-2 text-zinc-200 placeholder-zinc-600 focus:outline-none">
+                    </div>
+
+                    <div>
+                        <label for="agent-target-port" class="block text-[10px] text-zinc-400 mb-1">PORT *</label>
+                        <input type="number" id="agent-target-port" required min="1" max="65535" value="8443" class="w-full bg-charcoal border border-borderline focus:border-crimson rounded-lg px-3 py-2 text-zinc-200 focus:outline-none">
+                    </div>
+
+                    <div>
+                        <label for="agent-protocol" class="block text-[10px] text-zinc-400 mb-1">TRANSPORT</label>
+                        <select id="agent-protocol" onchange="updateAgentPathHint()" class="w-full bg-charcoal border border-borderline focus:border-crimson rounded-lg px-2.5 py-2 text-zinc-200 focus:outline-none">
+                            <option value="http">HTTP POST</option>
+                            <option value="websocket">WebSocket (ws)</option>
+                        </select>
+                    </div>
+
+                    <div class="sm:col-span-2">
+                        <label for="agent-node-id" class="block text-[10px] text-zinc-400 mb-1">NODE LABEL / ID (OPTIONAL)</label>
+                        <input type="text" id="agent-node-id" placeholder="Defaults to $(hostname -s)" class="w-full bg-charcoal border border-borderline focus:border-crimson rounded-lg px-3 py-2 text-zinc-200 placeholder-zinc-600 focus:outline-none">
+                    </div>
+
+                    <div>
+                        <label for="agent-interval" class="block text-[10px] text-zinc-400 mb-1">INTERVAL (SEC)</label>
+                        <input type="number" id="agent-interval" min="1" max="3600" value="5" class="w-full bg-charcoal border border-borderline focus:border-crimson rounded-lg px-3 py-2 text-zinc-200 focus:outline-none">
+                    </div>
+
+                    <div>
+                        <label for="agent-token" class="block text-[10px] text-zinc-400 mb-1">AUTH TOKEN (OPTIONAL)</label>
+                        <input type="text" id="agent-token" placeholder="Bearer token" class="w-full bg-charcoal border border-borderline focus:border-crimson rounded-lg px-3 py-2 text-zinc-200 placeholder-zinc-600 focus:outline-none">
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <span id="agent-endpoint-preview" class="text-[11px] text-zinc-400">Endpoint: <strong class="text-cyan-400">http://192.168.1.50:8443/api/telemetry</strong></span>
+                    <button type="submit" class="px-3.5 py-2 rounded-lg bg-crimson hover:bg-crimson-dark text-white font-semibold transition cursor-pointer">
+                        GENERATE SCRIPT
+                    </button>
+                </div>
+
+                <div class="space-y-2">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                        <span class="text-zinc-300 font-semibold uppercase tracking-wider">Generated Script Preview (agent-setup.sh)</span>
+                        <div class="flex items-center gap-2">
+                            <button type="button" onclick="copyGeneratedScript()" class="px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-borderline transition cursor-pointer">
+                                COPY SCRIPT
+                            </button>
+                            <button type="button" onclick="downloadGeneratedScript()" class="px-2.5 py-1 rounded bg-crimson/15 hover:bg-crimson/25 text-crimson border border-crimson/40 transition cursor-pointer">
+                                DOWNLOAD .SH
+                            </button>
+                        </div>
+                    </div>
+                    <pre id="agent-script-output" class="p-3 bg-obsidian border border-borderline rounded-lg text-zinc-300 overflow-x-auto max-h-64 leading-relaxed"></pre>
+                </div>
+            </form>
+
+            <div class="px-4 py-2.5 bg-obsidian border-t border-borderline flex justify-between items-center text-[11px] font-mono text-zinc-500">
+                <span>Run with: <code class="text-zinc-300">chmod +x agent-setup.sh && ./agent-setup.sh</code></span>
+                <button type="button" onclick="closeAgentSetupModal()" class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-white cursor-pointer">CLOSE</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Banner -->
+    <div id="toast" class="fixed bottom-5 right-5 z-50 transform translate-y-20 opacity-0 transition-all duration-300 bg-charcoal border border-crimson/50 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-3 font-mono text-xs">
+        <span class="w-2 h-2 rounded-full bg-crimson"></span>
+        <span id="toast-msg">Ready</span>
+    </div>
+
+    <!-- =====================================================================
+         MODULAR TELEMETRY INGESTION ENGINE & STATE STORE
+         ===================================================================== -->
+    <script>
+        /**
+         * =====================================================================
+         * CENTRAL STATE STORE (BARE INITIALIZATION - ZERO DUMMY DATA)
+         * =====================================================================
+         */
+        const state = {
+            nodes: {},
+            activeNodeId: null,
+            netstatFilter: "ALL",
+            ingestConfig: {
+                endpoint: "ws://0.0.0.0:8443/ws",
+                pollUrl: "/api/nodes",
+                mode: "websocket",
+                token: "",
+                connected: false
+            }
+        };
+
+        let activeSocket = null;
+        let activePollTimer = null;
+        let uptimeTicker = null;
+        const MAX_HISTORY_POINTS = 30;
+
+        /**
+         * =====================================================================
+         * PUBLIC BACKEND INGESTION API (window.ServerMonitor)
+         * =====================================================================
+         */
+        window.ServerMonitor = {
+            /**
+             * Ingests a real telemetry JSON packet from a server node.
+             * Automatically registers new nodes, appends time-series buffers,
+             * and updates the UI if the node is active (or auto-selects first node).
+             *
+             * @param {string} nodeId - Unique identifier for the reporting server
+             * @param {Object} payload - Structured telemetry payload matching schema
+             */
+            ingestPayload(nodeId, payload) {
+                if (!nodeId || !payload) return;
+
+                const existing = state.nodes[nodeId];
+                const cpuUsage = Number(payload.cpu?.usage ?? 0);
+                const rxMbps = Number(payload.network?.rx_mbps ?? 0);
+                const txMbps = Number(payload.network?.tx_mbps ?? 0);
+
+                // Maintain rolling history buffers per node
+                const cpuHistory = existing ? [...existing.cpuHistory, cpuUsage] : [cpuUsage];
+                const rxHistory = existing ? [...existing.rxHistory, rxMbps] : [rxMbps];
+                const txHistory = existing ? [...existing.txHistory, txMbps] : [txMbps];
+
+                if (cpuHistory.length > MAX_HISTORY_POINTS) cpuHistory.shift();
+                if (rxHistory.length > MAX_HISTORY_POINTS) rxHistory.shift();
+                if (txHistory.length > MAX_HISTORY_POINTS) txHistory.shift();
+
+                state.nodes[nodeId] = {
+                    node_id: nodeId,
+                    hostname: payload.hostname || nodeId,
+                    role: payload.role || "MANAGED NODE",
+                    status: payload.status || (cpuUsage > 85 ? "warning" : "online"),
+                    ip: payload.ip || "--",
+                    private_ip: payload.private_ip || "--",
+                    region: payload.region || "--",
+                    os: payload.os || "--",
+                    kernel: payload.kernel || "--",
+                    uptime_seconds: Number(payload.uptime_seconds ?? 0),
+                    last_seen: new Date(),
+                    tasks: payload.tasks || null,
+                    cpu: payload.cpu || {},
+                    ram: payload.ram || {},
+                    disk: payload.disk || {},
+                    network: payload.network || {},
+                    netstat: Array.isArray(payload.netstat) ? payload.netstat : [],
+                    services: Array.isArray(payload.services) ? payload.services : [],
+                    cpuHistory,
+                    rxHistory,
+                    txHistory
+                };
+
+                // Auto-select the first node that reports in
+                if (!state.activeNodeId) {
+                    state.activeNodeId = nodeId;
+                }
+
+                updateConnectionBadges();
+                renderNodeSwitcher();
+
+                if (state.activeNodeId === nodeId) {
+                    renderDashboard();
+                }
+            },
+
+            /**
+             * Removes a disconnected or stale node from the dashboard.
+             * @param {string} nodeId
+             */
+            removeNode(nodeId) {
+                delete state.nodes[nodeId];
+                const remainingIds = Object.keys(state.nodes);
+                if (state.activeNodeId === nodeId) {
+                    state.activeNodeId = remainingIds.length > 0 ? remainingIds[0] : null;
+                }
+                updateConnectionBadges();
+                renderNodeSwitcher();
+                renderDashboard();
+            },
+
+            /**
+             * Resets the entire dashboard back to the bare awaiting-input state.
+             */
+            clearAll() {
+                state.nodes = {};
+                state.activeNodeId = null;
+                updateConnectionBadges();
+                renderNodeSwitcher();
+                renderDashboard();
+            },
+
+            /**
+             * Opens a live WebSocket stream to receive real-time node telemetry.
+             * Expects JSON messages with `{ node_id, ...payload }` or `{ nodes: { [id]: payload } }`.
+             * @param {string} url
+             * @param {string} [token]
+             */
+            connectWebSocket(url, token = "") {
+                this.disconnect();
+                state.ingestConfig.mode = "websocket";
+                state.ingestConfig.endpoint = url;
+                state.ingestConfig.token = token;
+
+                try {
+                    const wsUrl = token ? `${url}${url.includes("?") ? "&" : "?"}token=${encodeURIComponent(token)}` : url;
+                    activeSocket = new WebSocket(wsUrl);
+
+                    activeSocket.onopen = () => {
+                        state.ingestConfig.connected = true;
+                        updateConnectionBadges();
+                        showToast(`Connected to WebSocket ingest: ${url}`);
+                    };
+
+                    activeSocket.onmessage = (event) => {
+                        try {
+                            const data = JSON.parse(event.data);
+                            if (data.nodes && typeof data.nodes === "object") {
+                                Object.entries(data.nodes).forEach(([id, p]) => this.ingestPayload(id, p));
+                            } else {
+                                const id = data.node_id || data.hostname;
+                                if (id) this.ingestPayload(id, data);
+                            }
+                        } catch (err) {
+                            console.error("[NodeWatch] Invalid JSON frame:", err);
+                        }
+                    };
+
+                    activeSocket.onclose = () => {
+                        state.ingestConfig.connected = false;
+                        updateConnectionBadges();
+                    };
+
+                    activeSocket.onerror = () => {
+                        state.ingestConfig.connected = false;
+                        updateConnectionBadges();
+                        showToast(`WebSocket connection failed: ${url}`);
+                    };
+                } catch (err) {
+                    showToast(`Invalid WebSocket URL: ${err.message}`);
+                }
+            },
+
+            /**
+             * Starts polling an HTTP REST endpoint for node telemetry snapshots.
+             * @param {string} url
+             * @param {number} [intervalMs=2000]
+             * @param {string} [token]
+             */
+            startHttpPolling(url, intervalMs = 2000, token = "") {
+                this.disconnect();
+                state.ingestConfig.mode = "http";
+                state.ingestConfig.pollUrl = url;
+                state.ingestConfig.token = token;
+                state.ingestConfig.connected = true;
+                updateConnectionBadges();
+
+                const poll = async () => {
+                    try {
+                        const headers = token ? { Authorization: `Bearer ${token}` } : {};
+                        const res = await fetch(url, { headers });
+                        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                        const data = await res.json();
+
+                        if (Array.isArray(data)) {
+                            data.forEach(item => {
+                                const id = item.node_id || item.hostname;
+                                if (id) this.ingestPayload(id, item);
+                            });
+                        } else if (data.nodes && typeof data.nodes === "object") {
+                            Object.entries(data.nodes).forEach(([id, p]) => this.ingestPayload(id, p));
+                        } else if (data.node_id || data.hostname) {
+                            this.ingestPayload(data.node_id || data.hostname, data);
+                        }
+                    } catch (err) {
+                        console.warn("[NodeWatch] HTTP poll error:", err.message);
+                    }
+                };
+
+                poll();
+                activePollTimer = setInterval(poll, intervalMs);
+                showToast(`Started HTTP polling: ${url}`);
+            },
+
+            /**
+             * Disconnects any active WebSocket or HTTP polling transport.
+             */
+            disconnect() {
+                if (activeSocket) {
+                    activeSocket.close();
+                    activeSocket = null;
+                }
+                if (activePollTimer) {
+                    clearInterval(activePollTimer);
+                    activePollTimer = null;
+                }
+                state.ingestConfig.connected = false;
+                updateConnectionBadges();
+            },
+
+            /**
+             * Inspect current internal state store.
+             */
+            getState() {
+                return state;
+            }
+        };
+
+        // =====================================================================
+        // INITIALIZATION
+        // =====================================================================
+        document.addEventListener("DOMContentLoaded", () => {
+            lucide.createIcons();
+            renderDashboard();
+
+            // Live 1-second uptime incrementer only when an active node has reported uptime > 0
+            uptimeTicker = setInterval(() => {
+                Object.values(state.nodes).forEach(n => {
+                    if (n.uptime_seconds > 0) n.uptime_seconds += 1;
+                });
+                if (state.activeNodeId && state.nodes[state.activeNodeId]) {
+                    updateUptimeDisplay(state.nodes[state.activeNodeId].uptime_seconds);
+                }
+            }, 1000);
+
+            window.addEventListener("resize", () => {
+                drawCpuSparkline();
+                drawNetworkChart();
+            });
+        });
+
+        // =====================================================================
+        // UI RENDERING ENGINE
+        // =====================================================================
+        function updateConnectionBadges() {
+            const nodeCount = Object.keys(state.nodes).length;
+            const isConnected = state.ingestConfig.connected;
+
+            const badge = document.getElementById("connection-status-badge");
+            const indicator = document.getElementById("stream-indicator");
+            const label = document.getElementById("stream-label");
+            const headerEndpoint = document.getElementById("header-endpoint-display");
+            const ingestDot = document.getElementById("ingest-dot");
+            const ingestPulse = document.getElementById("ingest-pulse");
+            const modalStatus = document.getElementById("modal-conn-status");
+            const connectBtn = document.getElementById("btn-connect");
+
+            const activeUrl = state.ingestConfig.mode === "websocket"
+                ? state.ingestConfig.endpoint
+                : state.ingestConfig.pollUrl;
+
+            if (isConnected || nodeCount > 0) {
+                badge.className = "flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs font-mono font-semibold";
+                indicator.className = "w-2 h-2 rounded-full bg-emerald-400 animate-pulse";
+                label.textContent = nodeCount > 0 ? `ACTIVE (${nodeCount} NODE${nodeCount > 1 ? "S" : ""})` : "LISTENING";
+
+                ingestDot.className = "relative inline-flex rounded-full h-2 w-2 bg-emerald-500";
+                ingestPulse.classList.remove("hidden");
+                headerEndpoint.className = "text-emerald-400 font-semibold";
+                headerEndpoint.textContent = `${activeUrl} (LIVE)`;
+            } else {
+                badge.className = "flex items-center gap-2 px-3 py-1.5 rounded-lg bg-zinc-900 border border-borderline text-zinc-400 text-xs font-mono font-semibold";
+                indicator.className = "w-2 h-2 rounded-full bg-zinc-500";
+                label.textContent = "AWAITING NODES";
+
+                ingestDot.className = "relative inline-flex rounded-full h-2 w-2 bg-zinc-500";
+                ingestPulse.classList.add("hidden");
+                headerEndpoint.className = "text-zinc-400 font-semibold";
+                headerEndpoint.textContent = ":8443 (IDLE)";
+            }
+
+            if (modalStatus && connectBtn) {
+                if (isConnected) {
+                    modalStatus.textContent = "CONNECTED";
+                    modalStatus.className = "px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30";
+                    connectBtn.textContent = "DISCONNECT";
+                } else {
+                    modalStatus.textContent = "DISCONNECTED";
+                    modalStatus.className = "px-2 py-0.5 rounded bg-zinc-900 text-zinc-400 border border-borderline";
+                    connectBtn.textContent = "CONNECT";
+                }
+            }
+        }
+
+        function renderNodeSwitcher() {
+            const container = document.getElementById("node-switcher");
+            const ids = Object.keys(state.nodes);
+
+            if (ids.length === 0) {
+                container.innerHTML = `<span class="text-[11px] font-mono text-zinc-500 px-2 py-0.5">No active nodes reporting</span>`;
+                return;
+            }
+
+            container.innerHTML = ids.map(id => {
+                const node = state.nodes[id];
+                const isSelected = id === state.activeNodeId;
+                const dotColor = node.status === "warning" ? "bg-amber-400" : "bg-emerald-400";
+                const activeClasses = isSelected
+                    ? "bg-slatepanel text-white border-crimson/60 shadow-[0_0_12px_rgba(220,38,38,0.15)]"
+                    : "text-zinc-400 hover:text-zinc-200 border-transparent";
+
+                return `
+                    <button onclick="selectNode('${id}')" class="flex items-center gap-2 px-3 py-1 rounded-md border text-xs font-mono transition whitespace-nowrap cursor-pointer ${activeClasses}">
+                        <span class="w-2 h-2 rounded-full ${dotColor}"></span>
+                        <span>${node.hostname}</span>
+                    </button>
+                `;
+            }).join("");
+        }
+
+        function selectNode(nodeId) {
+            state.activeNodeId = nodeId;
+            renderNodeSwitcher();
+            renderDashboard();
+        }
+
+        function renderDashboard() {
+            const node = state.activeNodeId ? state.nodes[state.activeNodeId] : null;
+
+            if (!node) {
+                renderEmptyDashboard();
+                return;
+            }
+
+            // 1. Banner
+            const bannerHost = document.getElementById("banner-hostname");
+            bannerHost.textContent = node.hostname;
+            bannerHost.className = "font-mono font-bold text-base text-white";
+
+            const bannerRole = document.getElementById("banner-role");
+            bannerRole.textContent = node.role;
+            bannerRole.className = "px-2 py-0.5 text-[11px] font-mono rounded bg-zinc-800 text-zinc-300 border border-zinc-700";
+
+            document.getElementById("banner-status-dot").className = `w-2.5 h-2.5 rounded-full ${node.status === "warning" ? "bg-amber-400" : "bg-emerald-500"}`;
+            document.getElementById("banner-ip").textContent = node.ip;
+            document.getElementById("banner-private-ip").textContent = node.private_ip;
+            document.getElementById("banner-region").textContent = node.region;
+            document.getElementById("last-updated-time").textContent = node.last_seen ? node.last_seen.toTimeString().split(" ")[0] : "--";
+
+            // 2. CPU Card
+            const cpuPct = Number(node.cpu.usage ?? 0);
+            document.getElementById("cpu-percent").textContent = `${cpuPct.toFixed(1)}%`;
+            document.getElementById("cpu-cores").textContent = node.cpu.cores ? `${node.cpu.cores} vCPU` : "-- vCPU";
+            document.getElementById("cpu-load").textContent = Array.isArray(node.cpu.load_avg) ? node.cpu.load_avg.join(", ") : "--";
+            const cpuRing = document.getElementById("cpu-ring");
+            cpuRing.setAttribute("stroke-dasharray", `${Math.min(100, Math.max(0, cpuPct))}, 100`);
+            cpuRing.classList.toggle("text-amber-400", cpuPct > 75);
+            cpuRing.classList.toggle("text-crimson", cpuPct <= 75);
+            drawCpuSparkline();
+
+            // 3. RAM Card
+            const totalRam = Number(node.ram.total_gb ?? 0);
+            const usedRam = Number(node.ram.used_gb ?? 0);
+            const activeRam = Number(node.ram.active_gb ?? usedRam);
+            const cachedRam = Number(node.ram.cached_gb ?? 0);
+            const ramPct = totalRam > 0 ? Math.round((usedRam / totalRam) * 100) : 0;
+            const activePct = totalRam > 0 ? (activeRam / totalRam) * 100 : 0;
+            const cachedPct = totalRam > 0 ? (cachedRam / totalRam) * 100 : 0;
+
+            document.getElementById("ram-percent").textContent = `${ramPct}%`;
+            document.getElementById("ram-fraction").textContent = `${usedRam.toFixed(2)} / ${totalRam.toFixed(2)} GB`;
+            document.getElementById("ram-bar-used").style.width = `${Math.min(100, activePct)}%`;
+            document.getElementById("ram-bar-cached").style.width = `${Math.min(100 - activePct, cachedPct)}%`;
+            document.getElementById("ram-active").textContent = `${activeRam.toFixed(2)} GB`;
+            document.getElementById("ram-cached").textContent = `${cachedRam.toFixed(2)} GB`;
+
+            const ramBadge = document.getElementById("ram-badge");
+            ramBadge.textContent = ramPct > 85 ? "HIGH" : "ACTIVE";
+            ramBadge.className = ramPct > 85
+                ? "px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/20"
+                : "px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+
+            if (node.ram.swap_total_gb !== undefined) {
+                const swapPct = node.ram.swap_total_gb > 0 ? Math.round((node.ram.swap_used_gb / node.ram.swap_total_gb) * 100) : 0;
+                document.getElementById("ram-swap").textContent = `${Number(node.ram.swap_used_gb).toFixed(1)} / ${Number(node.ram.swap_total_gb).toFixed(1)} GB (${swapPct}%)`;
+            } else {
+                document.getElementById("ram-swap").textContent = "--";
+            }
+
+            // 4. Disk Card
+            const totalDisk = Number(node.disk.total_gb ?? 0);
+            const usedDisk = Number(node.disk.used_gb ?? 0);
+            const diskPct = totalDisk > 0 ? Math.round((usedDisk / totalDisk) * 100) : 0;
+            const freeDisk = Math.max(0, totalDisk - usedDisk);
+
+            document.getElementById("disk-percent").textContent = `${diskPct}%`;
+            document.getElementById("disk-fraction").textContent = `${usedDisk.toFixed(1)} / ${totalDisk.toFixed(1)} GB`;
+            document.getElementById("disk-mount").textContent = node.disk.mount || "--";
+            document.getElementById("disk-bar").style.width = `${Math.min(100, diskPct)}%`;
+            document.getElementById("disk-fs").textContent = node.disk.fs || "--";
+            document.getElementById("disk-free").textContent = totalDisk > 0 ? `${freeDisk.toFixed(1)} GB` : "--";
+            document.getElementById("disk-iops").textContent = (node.disk.read_mbps !== undefined && node.disk.write_mbps !== undefined)
+                ? `${node.disk.read_mbps} MB/s · ${node.disk.write_mbps} MB/s`
+                : "--";
+
+            // 5. Uptime & System Info
+            updateUptimeDisplay(node.uptime_seconds);
+            document.getElementById("sys-os").textContent = node.os;
+            document.getElementById("sys-kernel").textContent = node.kernel;
+            document.getElementById("sys-tasks").textContent = node.tasks
+                ? `${node.tasks.total} total, ${node.tasks.running} running`
+                : "--";
+
+            // 6. Network Throughput
+            document.getElementById("net-iface").textContent = node.network.iface || "--";
+            document.getElementById("net-rx-speed").textContent = `${Number(node.network.rx_mbps ?? 0).toFixed(1)} Mbps`;
+            document.getElementById("net-tx-speed").textContent = `${Number(node.network.tx_mbps ?? 0).toFixed(1)} Mbps`;
+            document.getElementById("net-rx-total").textContent = `Σ ${node.network.rx_total || "--"}`;
+            document.getElementById("net-tx-total").textContent = `Σ ${node.network.tx_total || "--"}`;
+            document.getElementById("network-empty-overlay").classList.toggle("hidden", node.rxHistory.length > 0);
+            drawNetworkChart();
+
+            // 7. Netstat & Services
+            renderNetstatTable();
+            renderServicesList();
+        }
+
+        function renderEmptyDashboard() {
+            const bannerHost = document.getElementById("banner-hostname");
+            bannerHost.textContent = "NO NODE SELECTED";
+            bannerHost.className = "font-mono font-bold text-base text-zinc-400";
+
+            const bannerRole = document.getElementById("banner-role");
+            bannerRole.textContent = "IDLE";
+            bannerRole.className = "px-2 py-0.5 text-[11px] font-mono rounded bg-zinc-900 text-zinc-500 border border-borderline";
+
+            document.getElementById("banner-status-dot").className = "w-2.5 h-2.5 rounded-full bg-zinc-600";
+            document.getElementById("banner-ip").textContent = "--";
+            document.getElementById("banner-private-ip").textContent = "--";
+            document.getElementById("banner-region").textContent = "--";
+            document.getElementById("last-updated-time").textContent = "--";
+
+            // CPU
+            document.getElementById("cpu-percent").textContent = "0.0%";
+            document.getElementById("cpu-cores").textContent = "-- vCPU";
+            document.getElementById("cpu-load").textContent = "--";
+            document.getElementById("cpu-ring").setAttribute("stroke-dasharray", "0, 100");
+            drawCpuSparkline();
+
+            // RAM
+            document.getElementById("ram-percent").textContent = "0%";
+            document.getElementById("ram-fraction").textContent = "0.00 / 0.00 GB";
+            document.getElementById("ram-bar-used").style.width = "0%";
+            document.getElementById("ram-bar-cached").style.width = "0%";
+            document.getElementById("ram-active").textContent = "--";
+            document.getElementById("ram-cached").textContent = "--";
+            document.getElementById("ram-swap").textContent = "--";
+            const ramBadge = document.getElementById("ram-badge");
+            ramBadge.textContent = "IDLE";
+            ramBadge.className = "px-2 py-0.5 rounded text-[10px] font-mono font-semibold bg-zinc-900 text-zinc-500 border border-borderline";
+
+            // Disk
+            document.getElementById("disk-percent").textContent = "0%";
+            document.getElementById("disk-fraction").textContent = "0.0 / 0.0 GB";
+            document.getElementById("disk-mount").textContent = "--";
+            document.getElementById("disk-bar").style.width = "0%";
+            document.getElementById("disk-fs").textContent = "--";
+            document.getElementById("disk-free").textContent = "--";
+            document.getElementById("disk-iops").textContent = "--";
+
+            // Uptime
+            document.getElementById("uptime-clock").textContent = "00d 00h 00m 00s";
+            document.getElementById("sys-os").textContent = "--";
+            document.getElementById("sys-kernel").textContent = "--";
+            document.getElementById("sys-tasks").textContent = "--";
+
+            // Network
+            document.getElementById("net-iface").textContent = "--";
+            document.getElementById("net-rx-speed").textContent = "0.0 Mbps";
+            document.getElementById("net-tx-speed").textContent = "0.0 Mbps";
+            document.getElementById("net-rx-total").textContent = "Σ --";
+            document.getElementById("net-tx-total").textContent = "Σ --";
+            document.getElementById("network-empty-overlay").classList.remove("hidden");
+            drawNetworkChart();
+
+            // Tables
+            renderNetstatTable();
+            renderServicesList();
+        }
+
+        function updateUptimeDisplay(totalSeconds = 0) {
+            let sec = Math.max(0, Math.floor(totalSeconds));
+            const days = Math.floor(sec / 86400);
+            sec %= 86400;
+            const hrs = Math.floor(sec / 3600);
+            sec %= 3600;
+            const mins = Math.floor(sec / 60);
+            const secs = sec % 60;
+            const pad = (n) => String(n).padStart(2, "0");
+            document.getElementById("uptime-clock").textContent = `${pad(days)}d ${pad(hrs)}h ${pad(mins)}m ${pad(secs)}s`;
+        }
+
+        // =====================================================================
+        // NETSTAT TABLE & FILTERING
+        // =====================================================================
+        function setNetstatFilter(filter) {
+            state.netstatFilter = filter;
+            document.querySelectorAll(".filter-tab").forEach(btn => {
+                const isMatch = btn.dataset.filter === filter;
+                btn.className = isMatch
+                    ? "filter-tab px-2.5 py-1 rounded bg-crimson text-white font-semibold cursor-pointer"
+                    : "filter-tab px-2.5 py-1 rounded text-zinc-400 hover:text-white cursor-pointer";
+            });
+            renderNetstatTable();
+        }
+
+        function renderNetstatTable() {
+            const node = state.activeNodeId ? state.nodes[state.activeNodeId] : null;
+            const tbody = document.getElementById("netstat-tbody");
+            const countBadge = document.getElementById("netstat-count");
+
+            if (!node || !node.netstat || node.netstat.length === 0) {
+                countBadge.textContent = "0";
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="5" class="py-12 text-center text-zinc-500">
+                            <div class="flex flex-col items-center gap-2">
+                                <i data-lucide="radio" class="w-5 h-5 text-zinc-600"></i>
+                                <span>No active socket data received</span>
+                            </div>
+                        </td>
+                    </tr>`;
+                lucide.createIcons();
+                return;
+            }
+
+            const query = document.getElementById("netstat-search").value.toLowerCase().trim();
+            const filtered = node.netstat.filter(row => {
+                const matchesTab =
+                    state.netstatFilter === "ALL" ||
+                    row.state === state.netstatFilter ||
+                    row.proto === state.netstatFilter;
+
+                const matchesSearch =
+                    !query ||
+                    (row.local || "").toLowerCase().includes(query) ||
+                    (row.foreign || "").toLowerCase().includes(query) ||
+                    (row.pid || "").toLowerCase().includes(query) ||
+                    (row.proto || "").toLowerCase().includes(query);
+
+                return matchesTab && matchesSearch;
+            });
+
+            countBadge.textContent = filtered.length;
+
+            if (filtered.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="py-8 text-center text-zinc-500">No sockets matching current filter.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = filtered.map(row => {
+                let stateBadge = "";
+                if (row.state === "LISTEN") {
+                    stateBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/30">LISTEN</span>`;
+                } else if (row.state === "ESTABLISHED") {
+                    stateBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">ESTABLISHED</span>`;
+                } else {
+                    stateBadge = `<span class="px-2 py-0.5 rounded text-[10px] font-semibold bg-amber-500/10 text-amber-400 border border-amber-500/30">${row.state || "--"}</span>`;
+                }
+
+                const protoColor = row.proto === "UDP" ? "text-purple-400" : "text-zinc-300";
+                return `
+                    <tr class="hover:bg-zinc-900/70 transition-colors">
+                        <td class="py-2.5 px-4 font-semibold ${protoColor}">${row.proto || "--"}</td>
+                        <td class="py-2.5 px-4 text-zinc-100">${highlightPort(row.local || "--")}</td>
+                        <td class="py-2.5 px-4 text-zinc-400">${row.foreign || "--"}</td>
+                        <td class="py-2.5 px-4">${stateBadge}</td>
+                        <td class="py-2.5 px-4 text-right text-zinc-300">${row.pid || "--"}</td>
+                    </tr>`;
+            }).join("");
+        }
+
+        function highlightPort(addr) {
+            const idx = addr.lastIndexOf(":");
+            if (idx !== -1) {
+                return `${addr.slice(0, idx)}:<span class="text-crimson font-semibold">${addr.slice(idx + 1)}</span>`;
+            }
+            return addr;
+        }
+
+        // =====================================================================
+        // ACTIVE SERVICES LIST
+        // =====================================================================
+        function renderServicesList() {
+            const node = state.activeNodeId ? state.nodes[state.activeNodeId] : null;
+            const container = document.getElementById("services-list");
+            const summary = document.getElementById("services-summary");
+
+            if (!node || !node.services || node.services.length === 0) {
+                summary.textContent = "0/0 RUNNING";
+                summary.className = "text-[11px] font-mono text-zinc-500";
+                container.innerHTML = `
+                    <div class="py-12 text-center text-xs font-mono text-zinc-500 flex flex-col items-center gap-2">
+                        <i data-lucide="layers" class="w-5 h-5 text-zinc-600"></i>
+                        <span>No service telemetry reported</span>
+                    </div>`;
+                lucide.createIcons();
+                return;
+            }
+
+            const activeCount = node.services.filter(s => s.status === "active").length;
+            summary.textContent = `${activeCount}/${node.services.length} RUNNING`;
+            summary.className = activeCount === node.services.length
+                ? "text-[11px] font-mono text-emerald-400"
+                : "text-[11px] font-mono text-amber-400";
+
+            container.innerHTML = node.services.map(svc => {
+                const isOk = svc.status === "active";
+                return `
+                    <div class="bg-obsidian/90 border border-borderline hover:border-zinc-700 rounded-lg p-3 transition">
+                        <div class="flex items-start justify-between gap-2">
+                            <div>
+                                <div class="flex items-center gap-2">
+                                    <span class="w-2 h-2 rounded-full ${isOk ? "bg-emerald-400" : "bg-crimson"}"></span>
+                                    <span class="font-mono text-xs font-semibold text-white">${svc.name}</span>
+                                </div>
+                                <p class="text-[11px] text-zinc-500 mt-0.5 pl-4">${svc.desc || "System Daemon"}</p>
+                            </div>
+                            <span class="px-2 py-0.5 rounded text-[10px] font-mono font-semibold ${isOk ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" : "bg-crimson/10 text-crimson border-crimson/20"} border uppercase">
+                                ${svc.status || "unknown"}
+                            </span>
+                        </div>
+                        <div class="mt-2.5 pt-2 border-t border-borderline/60 flex items-center justify-between text-[11px] font-mono text-zinc-400 pl-4">
+                            <div class="flex items-center gap-3">
+                                <span>PID: <strong class="text-zinc-300">${svc.pid ?? "--"}</strong></span>
+                                <span>RSS: <strong class="text-zinc-300">${svc.mem || "--"}</strong></span>
+                            </div>
+                        </div>
+                    </div>`;
+            }).join("");
+        }
+
+        // =====================================================================
+        // HTML5 CANVAS CHARTS (CLEAN EMPTY GRIDLINES WHEN IDLE)
+        // =====================================================================
+        function drawCpuSparkline() {
+            const canvas = document.getElementById("cpu-sparkline");
+            if (!canvas) return;
+            const dpr = window.devicePixelRatio || 1;
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+
+            const ctx = canvas.getContext("2d");
+            ctx.scale(dpr, dpr);
+            const w = rect.width;
+            const h = rect.height;
+            ctx.clearRect(0, 0, w, h);
+
+            // Baseline guide
+            ctx.beginPath();
+            ctx.moveTo(0, h - 2);
+            ctx.lineTo(w, h - 2);
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
+            ctx.lineWidth = 1;
+            ctx.stroke();
+
+            const node = state.activeNodeId ? state.nodes[state.activeNodeId] : null;
+            if (!node || node.cpuHistory.length < 2) return;
+
+            const data = node.cpuHistory;
+            const stepX = w / (data.length - 1);
+
+            const grad = ctx.createLinearGradient(0, 0, 0, h);
+            grad.addColorStop(0, "rgba(220, 38, 38, 0.35)");
+            grad.addColorStop(1, "rgba(220, 38, 38, 0.0)");
+
+            ctx.beginPath();
+            ctx.moveTo(0, h);
+            data.forEach((val, i) => {
+                const x = i * stepX;
+                const y = h - (val / 100) * (h - 4) - 2;
+                ctx.lineTo(x, y);
+            });
+            ctx.lineTo(w, h);
+            ctx.closePath();
+            ctx.fillStyle = grad;
+            ctx.fill();
+
+            ctx.beginPath();
+            data.forEach((val, i) => {
+                const x = i * stepX;
+                const y = h - (val / 100) * (h - 4) - 2;
+                if (i === 0) ctx.moveTo(x, y);
+                else ctx.lineTo(x, y);
+            });
+            ctx.strokeStyle = "#DC2626";
+            ctx.lineWidth = 1.75;
+            ctx.stroke();
+        }
+
+        function drawNetworkChart() {
+            const canvas = document.getElementById("network-chart");
+            if (!canvas) return;
+            const dpr = window.devicePixelRatio || 1;
+            const rect = canvas.getBoundingClientRect();
+            canvas.width = rect.width * dpr;
+            canvas.height = rect.height * dpr;
+
+            const ctx = canvas.getContext("2d");
+            ctx.scale(dpr, dpr);
+            const w = rect.width;
+            const h = rect.height;
+            ctx.clearRect(0, 0, w, h);
+
+            const node = state.activeNodeId ? state.nodes[state.activeNodeId] : null;
+            const rx = node ? node.rxHistory : [];
+            const tx = node ? node.txHistory : [];
+
+            const maxVal = Math.max(...rx, ...tx, 100) * 1.15;
+            const padLeft = 48;
+            const padRight = 12;
+            const padTop = 14;
+            const padBottom = 20;
+            const plotW = w - padLeft - padRight;
+            const plotH = h - padTop - padBottom;
+
+            ctx.font = "10px 'JetBrains Mono', monospace";
+            ctx.fillStyle = "#52525b";
+            ctx.textAlign = "right";
+            ctx.textBaseline = "middle";
+
+            const gridSteps = 4;
+            for (let i = 0; i <= gridSteps; i++) {
+                const ratio = i / gridSteps;
+                const y = padTop + plotH - ratio * plotH;
+                const labelVal = Math.round(ratio * maxVal);
+
+                ctx.beginPath();
+                ctx.moveTo(padLeft, y);
+                ctx.lineTo(w - padRight, y);
+                ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
+                ctx.lineWidth = 1;
+                ctx.stroke();
+
+                ctx.fillText(`${labelVal}M`, padLeft - 8, y);
+            }
+
+            if (rx.length < 2) return;
+
+            const plotSeries = (arr, strokeColor, fillTop, fillBottom) => {
+                const stepX = plotW / (arr.length - 1);
+                const grad = ctx.createLinearGradient(0, padTop, 0, padTop + plotH);
+                grad.addColorStop(0, fillTop);
+                grad.addColorStop(1, fillBottom);
+
+                ctx.beginPath();
+                ctx.moveTo(padLeft, padTop + plotH);
+                arr.forEach((val, idx) => {
+                    const x = padLeft + idx * stepX;
+                    const y = padTop + plotH - (val / maxVal) * plotH;
+                    ctx.lineTo(x, y);
+                });
+                ctx.lineTo(padLeft + plotW, padTop + plotH);
+                ctx.closePath();
+                ctx.fillStyle = grad;
+                ctx.fill();
+
+                ctx.beginPath();
+                arr.forEach((val, idx) => {
+                    const x = padLeft + idx * stepX;
+                    const y = padTop + plotH - (val / maxVal) * plotH;
+                    if (idx === 0) ctx.moveTo(x, y);
+                    else ctx.lineTo(x, y);
+                });
+                ctx.strokeStyle = strokeColor;
+                ctx.lineWidth = 2;
+                ctx.stroke();
+            };
+
+            plotSeries(rx, "#22d3ee", "rgba(34, 211, 238, 0.22)", "rgba(34, 211, 238, 0.0)");
+            plotSeries(tx, "#DC2626", "rgba(220, 38, 38, 0.25)", "rgba(220, 38, 38, 0.0)");
+        }
+
+        // =====================================================================
+        // MODAL & INTERACTIVE HELPERS
+        // =====================================================================
+        function openConfigModal() {
+            const modal = document.getElementById("ingest-modal");
+            modal.classList.remove("hidden");
+            modal.classList.add("flex");
+            updateConnectionBadges();
+        }
+
+        function closeConfigModal() {
+            const modal = document.getElementById("ingest-modal");
+            modal.classList.add("hidden");
+            modal.classList.remove("flex");
+        }
+
+        // =====================================================================
+        // LINUX AGENT SETUP SCRIPT GENERATOR
+        // =====================================================================
+        let generatedScriptContent = "";
+
+        function openAgentSetupModal() {
+            const modal = document.getElementById("agent-setup-modal");
+            modal.classList.remove("hidden");
+            modal.classList.add("flex");
+            if (!generatedScriptContent) {
+                buildAgentScriptFromForm();
+            }
+        }
+
+        function closeAgentSetupModal() {
+            const modal = document.getElementById("agent-setup-modal");
+            modal.classList.add("hidden");
+            modal.classList.remove("flex");
+        }
+
+        function updateAgentPathHint() {
+            const host = (document.getElementById("agent-target-host")?.value || "127.0.0.1").trim();
+            const port = (document.getElementById("agent-target-port")?.value || "8443").trim();
+            const proto = document.getElementById("agent-protocol")?.value || "http";
+            const url = proto === "websocket"
+                ? `ws://${host}:${port}/ws`
+                : `http://${host}:${port}/api/telemetry`;
+            const preview = document.getElementById("agent-endpoint-preview");
+            if (preview) {
+                preview.innerHTML = `Endpoint: <strong class="text-cyan-400">${escapeHtml(url)}</strong>`;
+            }
+        }
+
+        function handleGenerateAgentScript(event) {
+            event.preventDefault();
+            buildAgentScriptFromForm();
+            showToast("Generated agent-setup.sh for target collector.");
+        }
+
+        function buildAgentScriptFromForm() {
+            const rawHost = document.getElementById("agent-target-host").value.trim() || "127.0.0.1";
+            const rawPort = parseInt(document.getElementById("agent-target-port").value, 10) || 8443;
+            const protocol = document.getElementById("agent-protocol").value;
+            const customNodeId = document.getElementById("agent-node-id").value.trim();
+            const intervalSec = Math.max(1, parseInt(document.getElementById("agent-interval").value, 10) || 5);
+            const authToken = document.getElementById("agent-token").value.trim();
+
+            const safeHost = rawHost.replace(/["'\\$`]/g, "");
+            const safePort = Math.min(65535, Math.max(1, rawPort));
+            const safeInterval = Math.min(3600, Math.max(1, intervalSec));
+            const safeToken = authToken.replace(/["'\\$`]/g, "");
+            const nodeIdExpr = customNodeId
+                ? `"${customNodeId.replace(/["'\\$`]/g, "")}"`
+                : `"$(hostname -s 2>/dev/null || hostname)"`;
+
+            const targetUrl = protocol === "websocket"
+                ? `ws://${safeHost}:${safePort}/ws`
+                : `http://${safeHost}:${safePort}/api/telemetry`;
+
+            updateAgentPathHint();
+
+            const installBlock = protocol === "websocket"
+                ? `install_packages() {
+  local missing=()
+  for cmd in jq curl awk free df ss uptime systemctl ip; do
+    command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
+  done
+  if [ "\${#missing[@]}" -gt 0 ]; then
+    echo "[agent-setup] Installing required read-only telemetry tools: \${missing[*]}"
+    if command -v apt-get >/dev/null 2>&1; then
+      sudo apt-get update -qq && sudo apt-get install -y -qq jq curl procps iproute2 coreutils gawk
+    elif command -v dnf >/dev/null 2>&1; then
+      sudo dnf install -y -q jq curl procps-ng iproute coreutils gawk
+    elif command -v yum >/dev/null 2>&1; then
+      sudo yum install -y -q jq curl procps iproute coreutils gawk
+    elif command -v apk >/dev/null 2>&1; then
+      sudo apk add --no-cache jq curl procps iproute2 coreutils gawk
+    else
+      echo "[agent-setup] Unsupported package manager; please install: \${missing[*]}" >&2
+      exit 1
+    fi
+  fi
+}`
+                : `install_packages() {
+  local missing=()
+  for cmd in jq curl awk free df ss uptime systemctl ip; do
+    command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
+  done
+  if [ "\${#missing[@]}" -gt 0 ]; then
+    echo "[agent-setup] Installing required read-only telemetry tools: \${missing[*]}"
+    if command -v apt-get >/dev/null 2>&1; then
+      sudo apt-get update -qq && sudo apt-get install -y -qq jq curl procps iproute2 coreutils gawk
+    elif command -v dnf >/dev/null 2>&1; then
+      sudo dnf install -y -q jq curl procps-ng iproute coreutils gawk
+    elif command -v yum >/dev/null 2>&1; then
+      sudo yum install -y -q jq curl procps iproute coreutils gawk
+    elif command -v apk >/dev/null 2>&1; then
+      sudo apk add --no-cache jq curl procps iproute2 coreutils gawk
+    else
+      echo "[agent-setup] Unsupported package manager; please install: \${missing[*]}" >&2
+      exit 1
+    fi
+  fi
+}`;
+
+            const sendBlock = protocol === "websocket"
+                ? `send_payload() {
+  local json_payload="$1"
+  if command -v websocat >/dev/null 2>&1; then
+    printf '%s\\n' "$json_payload" | websocat -n1 "${targetUrl}" >/dev/null 2>&1 || true
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -c '
+import sys, socket, base64, os, urllib.parse
+url = sys.argv[1]
+payload = sys.argv[2]
+parsed = urllib.parse.urlparse(url)
+host = parsed.hostname
+port = parsed.port or 8443
+path = parsed.path or "/ws"
+key = base64.b64encode(os.urandom(16)).decode()
+with socket.create_connection((host, port), timeout=3) as s:
+    req = f"GET {path} HTTP/1.1\\r\\nHost: {host}:{port}\\r\\nUpgrade: websocket\\r\\nConnection: Upgrade\\r\\nSec-WebSocket-Key: {key}\\r\\nSec-WebSocket-Version: 13\\r\\n\\r\\n"
+    s.sendall(req.encode())
+    s.recv(4096)
+    data = payload.encode()
+    mask = os.urandom(4)
+    header = bytearray([0x81])
+    if len(data) < 126:
+        header.append(0x80 | len(data))
+    elif len(data) < 65536:
+        header.append(0x80 | 126)
+        header.extend(len(data).to_bytes(2, "big"))
+    else:
+        header.append(0x80 | 127)
+        header.extend(len(data).to_bytes(8, "big"))
+    header.extend(mask)
+    masked = bytes(b ^ mask[i % 4] for i, b in enumerate(data))
+    s.sendall(bytes(header) + masked)
+' "${targetUrl}" "$json_payload" >/dev/null 2>&1 || true
+  else
+    curl -sS -m 3 -X POST -H "Content-Type: application/json" ${safeToken ? `-H "Authorization: Bearer ${safeToken}" ` : ""}--data "$json_payload" "http://${safeHost}:${safePort}/api/telemetry" >/dev/null 2>&1 || true
+  fi
+}`
+                : `send_payload() {
+  local json_payload="$1"
+  curl -sS -m 3 -X POST \\
+    -H "Content-Type: application/json" \\
+    ${safeToken ? `-H "Authorization: Bearer ${safeToken}" \\\n    ` : ""}--data "$json_payload" \\
+    "${targetUrl}" >/dev/null 2>&1 || true
+}`;
+
+            generatedScriptContent = `#!/usr/bin/env bash
+# NodeWatch Read-Only Linux Telemetry Agent
+# Target Collector: ${targetUrl}
+# Interval: ${safeInterval}s
+
+set -u
+
+COLLECTOR_HOST="${safeHost}"
+COLLECTOR_PORT="${safePort}"
+INTERVAL_SEC="${safeInterval}"
+NODE_ID=${nodeIdExpr}
+
+${installBlock}
+
+collect_cpu_usage() {
+  awk '/^cpu / {
+    idle = $5 + $6
+    total = 0
+    for (i = 2; i <= NF; i++) total += $i
+    printf "%.1f", (total > 0) ? ((total - idle) / total) * 100 : 0
+  }' /proc/stat
+}
+
+collect_payload() {
+  local hostname_fqdn ip_pub ip_priv os_name kernel_ver uptime_sec
+  hostname_fqdn="$(hostname -f 2>/dev/null || hostname)"
+  ip_priv="$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}' | head -n1)"
+  ip_priv="\${ip_priv:-127.0.0.1}"
+  ip_pub="$ip_priv"
+  os_name="$(. /etc/os-release 2>/dev/null && echo "\${PRETTY_NAME:-Linux}" || uname -s)"
+  kernel_ver="$(uname -r)"
+  uptime_sec="$(awk '{print int($1)}' /proc/uptime)"
+
+  local cpu_pct cpu_cores load_1 load_5 load_15
+  cpu_pct="$(collect_cpu_usage)"
+  cpu_cores="$(nproc 2>/dev/null || echo 1)"
+  read -r load_1 load_5 load_15 _ < /proc/loadavg
+
+  local ram_total_gb ram_used_gb ram_cached_gb swap_used_gb swap_total_gb
+  read -r ram_total_gb ram_used_gb ram_cached_gb < <(free -b | awk '
+    /^Mem:/ { total = $2 / 1073741824; avail = ($7 > 0 ? $7 : $4) / 1073741824; used = total - avail; cached = ($6 / 1073741824) }
+    END { printf "%.2f %.2f %.2f", total, (used < 0 ? 0 : used), (cached < 0 ? 0 : cached) }
+  ')
+  read -r swap_used_gb swap_total_gb < <(free -b | awk '
+    /^Swap:/ { printf "%.2f %.2f", $3 / 1073741824, $2 / 1073741824 }
+  ')
+
+  local disk_used_gb disk_total_gb disk_mount disk_fs
+  read -r disk_used_gb disk_total_gb disk_mount disk_fs < <(df -BG -T / 2>/dev/null | awk '
+    NR==2 { gsub(/G/,"",$3); gsub(/G/,"",$4); printf "%.1f %.1f %s %s", $4, $3, $7, $2 }
+  ')
+
+  local iface rx_mbps tx_mbps
+  iface="$(ip route show default 2>/dev/null | awk '{print $5}' | head -n1)"
+  iface="\${iface:-eth0}"
+  rx_mbps="0.0"
+  tx_mbps="0.0"
+
+  local netstat_json services_json
+  netstat_json="$(ss -tunapH 2>/dev/null | awk '
+    NR <= 25 {
+      proto = toupper($1)
+      state = ($2 == "UNCONN") ? "LISTEN" : $2
+      local_addr = $5
+      foreign_addr = $6
+      proc_info = ""
+      for (i=7; i<=NF; i++) proc_info = (proc_info == "" ? $i : proc_info " " $i)
+      gsub(/"/, "", proc_info)
+      printf "{\\"proto\\":\\"%s\\",\\"local\\":\\"%s\\",\\"foreign\\":\\"%s\\",\\"state\\":\\"%s\\",\\"pid\\":\\"%s\\"},", proto, local_addr, foreign_addr, state, proc_info
+    }
+  ' | sed 's/,$//')"
+
+  services_json="$(systemctl list-units --type=service --state=running --no-legend --no-pager 2>/dev/null | head -n 15 | awk '
+    {
+      svc = $1
+      desc = ""
+      for (i=5; i<=NF; i++) desc = (desc == "" ? $i : desc " " $i)
+      gsub(/"/, "", desc)
+      printf "{\\"name\\":\\"%s\\",\\"desc\\":\\"%s\\",\\"status\\":\\"active\\",\\"pid\\":0,\\"mem\\":\\"--\\"},", svc, desc
+    }
+  ' | sed 's/,$//')"
+
+  jq -n \\
+    --arg node_id "$NODE_ID" \\
+    --arg hostname "$hostname_fqdn" \\
+    --arg ip "$ip_pub" \\
+    --arg private_ip "$ip_priv" \\
+    --arg os "$os_name" \\
+    --arg kernel "$kernel_ver" \\
+    --argjson uptime_seconds "\${uptime_sec:-0}" \\
+    --argjson cpu_usage "\${cpu_pct:-0}" \\
+    --argjson cpu_cores "\${cpu_cores:-1}" \\
+    --argjson l1 "\${load_1:-0}" \\
+    --argjson l5 "\${load_5:-0}" \\
+    --argjson l15 "\${load_15:-0}" \\
+    --argjson ram_used "\${ram_used_gb:-0}" \\
+    --argjson ram_total "\${ram_total_gb:-0}" \\
+    --argjson ram_cached "\${ram_cached_gb:-0}" \\
+    --argjson swap_used "\${swap_used_gb:-0}" \\
+    --argjson swap_total "\${swap_total_gb:-0}" \\
+    --argjson disk_used "\${disk_used_gb:-0}" \\
+    --argjson disk_total "\${disk_total_gb:-0}" \\
+    --arg disk_mount "\${disk_mount:-/}" \\
+    --arg disk_fs "\${disk_fs:-ext4}" \\
+    --arg iface "$iface" \\
+    --argjson rx_mbps "\${rx_mbps:-0}" \\
+    --argjson tx_mbps "\${tx_mbps:-0}" \\
+    --argjson netstat "[\${netstat_json}]" \\
+    --argjson services "[\${services_json}]" \\
+    '{
+      node_id: $node_id,
+      hostname: $hostname,
+      role: "LINUX SERVER",
+      ip: $ip,
+      private_ip: $private_ip,
+      region: "local",
+      os: $os,
+      kernel: $kernel,
+      uptime_seconds: $uptime_seconds,
+      cpu: { usage: $cpu_usage, cores: $cpu_cores, load_avg: [$l1, $l5, $l15] },
+      ram: { used_gb: $ram_used, active_gb: $ram_used, cached_gb: $ram_cached, total_gb: $ram_total, swap_used_gb: $swap_used, swap_total_gb: $swap_total },
+      disk: { used_gb: $disk_used, total_gb: $disk_total, mount: $disk_mount, fs: $disk_fs, read_mbps: 0, write_mbps: 0 },
+      network: { iface: $iface, rx_mbps: $rx_mbps, tx_mbps: $tx_mbps, rx_total: "--", tx_total: "--" },
+      netstat: $netstat,
+      services: $services
+    }'
+}
+
+${sendBlock}
+
+install_packages
+echo "[agent-setup] Reporting node '$NODE_ID' to ${targetUrl} every \${INTERVAL_SEC}s (Ctrl+C to stop)..."
+
+while true; do
+  PAYLOAD="$(collect_payload)"
+  if [ -n "$PAYLOAD" ]; then
+    send_payload "$PAYLOAD"
+  fi
+  sleep "$INTERVAL_SEC"
+done
+`;
+
+            document.getElementById("agent-script-output").textContent = generatedScriptContent;
+        }
+
+        function copyGeneratedScript() {
+            if (!generatedScriptContent) buildAgentScriptFromForm();
+            const textarea = document.createElement("textarea");
+            textarea.value = generatedScriptContent;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand("copy");
+            document.body.removeChild(textarea);
+            showToast("Copied agent-setup.sh to clipboard.");
+        }
+
+        function downloadGeneratedScript() {
+            if (!generatedScriptContent) buildAgentScriptFromForm();
+            const blob = new Blob([generatedScriptContent], { type: "text/x-shellscript;charset=utf-8" });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement("a");
+            link.href = url;
+            link.download = "agent-setup.sh";
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            URL.revokeObjectURL(url);
+            showToast("Downloaded agent-setup.sh");
+        }
+
+        function escapeHtml(str) {
+            return String(str)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;");
+        }
+
+        function updateEndpointPlaceholder() {
+            const mode = document.getElementById("cfg-mode").value;
+            const urlInput = document.getElementById("cfg-url");
+            urlInput.value = mode === "websocket" ? "ws://0.0.0.0:8443/ws" : "http://0.0.0.0:8443/api/nodes";
+        }
+
+        function handleConnectToggle() {
+            if (state.ingestConfig.connected) {
+                window.ServerMonitor.disconnect();
+                showToast("Disconnected from ingest stream.");
+                return;
+            }
+            const mode = document.getElementById("cfg-mode").value;
+            const url = document.getElementById("cfg-url").value.trim();
+            const token = document.getElementById("cfg-token").value.trim();
+
+            if (!url) {
+                showToast("Please specify a valid collector endpoint URL.");
+                return;
+            }
+
+            if (mode === "websocket") {
+                window.ServerMonitor.connectWebSocket(url, token);
+            } else {
+                window.ServerMonitor.startHttpPolling(url, 2000, token);
+            }
+        }
+
+        function clearActiveOrAll() {
+            window.ServerMonitor.clearAll();
+            showToast("Telemetry state cleared. Awaiting server packets.");
+        }
+
+        function copySchemaToClipboard() {
+            const text = document.getElementById("schema-code").textContent;
+            const textarea = document.createElement("textarea");
+            textarea.value = text;
+            document.body.appendChild(textarea);
+            textarea.select();
+            document.execCommand("copy");
+            document.body.removeChild(textarea);
+            showToast("JSON payload schema copied to clipboard.");
+        }
+
+        function injectVerificationPayload() {
+            try {
+                const sample = JSON.parse(document.getElementById("schema-code").textContent);
+                window.ServerMonitor.ingestPayload(sample.node_id, sample);
+                closeConfigModal();
+                showToast(`Verified ingestion pipeline with ${sample.node_id}`);
+            } catch (e) {
+                showToast("Invalid JSON in schema preview.");
+            }
+        }
+
+        function showToast(message) {
+            const toast = document.getElementById("toast");
+            document.getElementById("toast-msg").textContent = message;
+            toast.classList.remove("translate-y-20", "opacity-0");
+            clearTimeout(window._toastTimer);
+            window._toastTimer = setTimeout(() => {
+                toast.classList.add("translate-y-20", "opacity-0");
+            }, 3000);
+        }
+    </script>
+</body>
+</html>
